@@ -11,7 +11,7 @@ class display:
 		print("")
 
 		print("master线程:")
-		print("系统繁忙程度(越大越繁忙): {t}".format(t=round(int(self.innodb_status_dict['background_thread']['srv_active'])/int(self.innodb_status_dict['background_thread']['srv_idle']),3)))
+		print("系统繁忙程度(越大越繁忙): {t} %".format(t=round(int(self.innodb_status_dict['background_thread']['srv_active'])/(int(self.innodb_status_dict['background_thread']['srv_idle'])+int(self.innodb_status_dict['background_thread']['srv_active']))*100,2)))
 		print("日志写入和刷新次数:",self.innodb_status_dict['background_thread']['log_flush_and_writes'])
 		print("")
 
@@ -31,10 +31,28 @@ class display:
 		print('每次空转等待的锁: rw_s:{rw_s}  rw_x:{rw_x} rw_sx:{rw_sx}'.format(rw_s=self.innodb_status_dict['semaphores']['spin_rounds_per_wait_rw_s'],rw_x=self.innodb_status_dict['semaphores']['spin_rounds_per_wait_rw_x'], rw_sx=self.innodb_status_dict['semaphores']['spin_rounds_per_wait_rw_sx']))
 		print("")
 
-		print("事务(含锁)")
-		print("TODO")
-		print("")
 
+		if self.innodb_status_dict['dead_lock']['rollback_trx'] is not None:
+			print("死锁(最近一条)") #回滚产生死锁的事务. 就是 执行哪条sql会产生死锁, 就回滚那条SQL所在的事务.(对于show engine innodb 来说永远是session 2)
+			print('事务1:     事务ID:{trx_id}  connection_id:{thread_id}  连接信息:{user} \n事务1的SQL: {sql}'.format(trx_id=self.innodb_status_dict['dead_lock']['s1']['trx_id'], thread_id=self.innodb_status_dict['dead_lock']['s1']['thread_id'], user=self.innodb_status_dict['dead_lock']['s1']['user'], sql=self.innodb_status_dict['dead_lock']['s1']['sql']))
+			print('事务2:     事务ID:{trx_id}  connection_id:{thread_id}  连接信息:{user} \n事务1的SQL: {sql}'.format(trx_id=self.innodb_status_dict['dead_lock']['s2']['trx_id'], thread_id=self.innodb_status_dict['dead_lock']['s2']['thread_id'], user=self.innodb_status_dict['dead_lock']['s2']['user'], sql=self.innodb_status_dict['dead_lock']['s2']['sql']))
+			print("回滚事务: {trx}".format(trx=self.innodb_status_dict['dead_lock']['rollback_trx']))
+			#print(self.innodb_status_dict['dead_lock'])
+		else:
+			print("无死锁信息")
+
+		print("")
+		print("事务汇总信息")
+		print("max_trx_id :",self.innodb_status_dict['transactions']['sumary']['max_trx_id'])
+		print("min_trx_id :",self.innodb_status_dict['transactions']['sumary']['min_trx_id'])
+		print("max_undo_id:",self.innodb_status_dict['transactions']['sumary']['max_undo_id'])
+		print("purge线程状态:",self.innodb_status_dict['transactions']['sumary']['purge_state'])
+		print('undo包含的事务数:',self.innodb_status_dict['transactions']['sumary']['history_list_length_for_undo'])
+		for x in self.innodb_status_dict['transactions']['trx_list']:
+			if x['trx_state'] != 'not started':
+				print('事务ID:{trx_id}  事务状态:{trx_state}  锁:{n_lock}  堆大小:{heap_size}  锁行数:{row_locks}  事务中修改或插入的行数:{undo_no}  MYSQL_PROCESS_ID:{thread_id}'.format(trx_id=x['trx_id'],trx_state=x['trx_state'], n_lock=x['n_locks'], heap_size=x['heap_size'], row_locks=x['row_locks'], undo_no=x['undo_no'], thread_id=x['thread_id']))
+
+		print("")
 		print("文件IO")
 		print("Pending normal 异步IO READ (对应read thread) : ",self.innodb_status_dict['file_io']['pending_normal_aio_reads'] )
 		print("Pending normal 异步IO WRITE(对应WRIET thread): ",self.innodb_status_dict['file_io']['pending_normal_aio_writes'] )

@@ -158,11 +158,109 @@ class innodb_status_format:
 	def set_latest_foreign_key_error(self,):
 		return
 
+	#TODO
+	def set_dead_lock(self,):
+		deadlocks = re.compile('------------------------[\n]LATEST DETECTED DEADLOCK[\n]------------------------[\n](.+)[\n]------------[\n]TRANSACTIONS[\n]------------',re.S).findall(self.innodb_status_str)
+		#deadlock = deadlocks[0] if len(deadlocks) > 0 else ''
+		s1 = {}
+		s2 = {}
+		rollback_trx = None
+		if len(deadlocks) > 0:
+			deadlock = deadlocks[0].strip()
+			s1_info = re.compile('\*\*\* \(1\) TRANSACTION:(.+)\*\*\* \(1\) HOLDS THE LOCK\(S\)',re.S).findall(deadlock)
+			if len(s1_info) > 0:
+				#MYSQL 8.0
+				s1_info = s1_info[0].strip()
+			else:
+				#MYSQL 5.7
+				s1_info = re.compile('\*\*\* \(1\) TRANSACTION:(.+)\*\*\* \(1\) WAITING FOR THIS LOCK TO',re.S).findall(deadlock)[0].strip()
+			s1_thread_id = re.compile('MySQL thread id (.+), OS thread handle').findall(s1_info)[0].strip()
+			s1_host_user = re.compile('MySQL thread id.+OS thread handle.+query id (.+)').findall(s1_info)[0].strip()
+			s1_host_user_list = s1_host_user.split()
+			s1_host_user_list[0] = ''
+			s1_list = s1_info.split('\n')
+			s1_sql = s1_list[len(s1_list)-1] if s1_list[len(s1_list)-1] is not None else s1_list[len(s1_list)-2]
+			s1 = {
+				'trx_id':re.compile('TRANSACTION (.+), ACTIVE ').findall(s1_info)[0].strip(),
+				'thread_id':s1_thread_id,
+				'user':' '.join(x for x in s1_host_user_list),
+				'sql':s1_sql,
+			}
+			s2_info = re.compile('\*\*\* \(2\) TRANSACTION:(.+)\*\*\* \(2\) HOLDS THE LOCK',re.S).findall(deadlock)[0].strip()
+			s2_thread_id = re.compile('MySQL thread id (.+), OS thread handle').findall(s2_info)[0].strip()
+			s2_host_user = re.compile('MySQL thread id.+OS thread handle.+query id (.+)').findall(s2_info)[0].strip()
+			s2_host_user_list = s2_host_user.split()
+			s2_host_user_list[0] = ''
+			s2_list = s2_info.split('\n')
+			s2_sql = s2_list[len(s2_list)-1] if s2_list[len(s2_list)-1] is not None else s2_list[len(s2_list)-2]
+			s2 = {
+				'trx_id':re.compile('TRANSACTION (.+), ACTIVE ').findall(s2_info)[0].strip(),
+				'thread_id':s2_thread_id,
+				'user':' '.join(x for x in s2_host_user_list),
+				'sql':s2_sql,
+			}
+			rollback_trx = re.compile('\*\*\* WE ROLL BACK TRANSACTION \((.+)\)').findall(deadlock)[0].strip()
+
+		self.innodb_status_dict['dead_lock'] = {
+			's1':s1,
+			's2':s2,
+			'rollback_trx':rollback_trx,
+		}
+
+	#---TRANSACTION 15420058, ACTIVE 0 sec, thread declared inside InnoDB 4999
+	#mysql tables in use 1, locked 1
+	#4 lock struct(s), heap size 1136, 2 row lock(s), undo log entries 2
+	#MySQL thread id 57, OS thread handle 140634080601856, query id 6094244 127.0.0.1 root query end
+	#UPDATE sbtest9 SET c='63809926340-72323681832-38173452674-68246860475-51171167424-61465592048-69371039992-90341122241-88518339780-08226846908' WHERE id=50356
+	#Trx read view will not see trx with id >= 15420050, sees < 14810710
+	def __trx(self,trx):
+		#print(re.compile(', query id (.+)Trx read view will not see trx with',re.S).findall(trx))
+		sql_tmp = re.compile(', query id (.+)Trx read view will not see trx with',re.S).findall(trx)
+		if len(sql_tmp) > 0:
+			sql = sql_tmp[0].split('\n')[1]
+		else:
+			sql = ''
+		return {
+			'trx_id':trx.split(',')[0].strip(),
+			'trx_state':trx.split(',')[1].split('\n')[0].strip(), #1.not started  2.forced rollback  3.ACTIVE N sec 4.ACTIVE (PREPARED) N sec  5.COMMITTED IN MEMORY  6.state
+			'op_info':'',
+			'is_recovered':False if trx.split('\n')[0].find(' recovered trx') == -1 else True,
+			'trx_n_tickets_to_enter_innodb':re.compile(', thread declared inside InnoDB(.+)').findall(trx)[0].strip() if trx.split('\n')[0].find('thread declared inside InnoDB') != -1 else '',
+			'n_mysql_tables_in_use':re.compile('mysql tables in use(.+), locked').findall(trx), 
+			'mysql_n_tables_locked':re.compile('mysql tables in use.+, locked(.+)').findall(trx),
+			'que_state':'',
+			'n_locks':re.compile('(.+)lock struct\(s\), heap size').findall(trx)[0].strip(), #锁数量
+			'heap_size':re.compile('lock struct\(s\), heap size(.+),').findall(trx)[0].strip().split()[0].replace(',',''), #堆大小,字节
+			'row_locks':re.compile('.+, heap size.+,(.+)row lock\(s\)').findall(trx)[0].strip(), #锁行数
+			'has_search_latch':False if trx.find(', holds adaptive hash latch') == -1 else True,
+			'undo_no':re.compile(', undo log entries(.+)').findall(trx)[0].strip() if trx.find(', undo log entries') != -1 else '' ,#表示 事务中修改和插入的行数
+			'thread_id':re.compile('MySQL thread id (.+), OS thread handle').findall(trx)[0].strip() if trx.find('MySQL thread id ') != -1 else '', #其实是process id  也就是connection id
+			'os_thread_handle':re.compile(', OS thread handle (.+), query id').findall(trx),
+			'query_id':re.compile(', query id (.+)').findall(trx),
+			#'sql':re.compile(', query id (.+)Trx read view will not see trx with',re.S).findall(trx)[0].split('\n')[1] if trx.find(', query id ') != -1 else '',
+			'sql':sql,
+		}
+
+
 	def set_transactions(self,):
 		#TODO
 		#storage/innobase/srv/srv0srv.cc lock_print_info_summary   lock_print_info_all_transactions lock_trx_print_locks trx_print_low 涉及函数太多... 慢慢完善...
 		transactions = re.compile('TRANSACTIONS[\n]------------[\n](.+)[\n]--------[\n]FILE I/O',re.S).findall(self.innodb_status_str)[0]
 		self.innodb_status_dict['transactions'] = {}
+
+		#汇总信息: storage/innobase/lock/lock0lock.cc lock_print_info_summary
+		transaction_sumary = re.compile('(.+)LIST OF TRANSACTIONS FOR EACH SESSION:[\n]',re.S).findall(transactions)[0]
+		self.innodb_status_dict['transactions']['sumary'] = {
+			#purge线程
+			'max_trx_id' : re.compile('Trx id counter(.+)').findall(transaction_sumary)[0].strip(), #trx counter
+			'min_trx_id' : re.compile("Purge done for trx's n:o <(.+)undo n:o <").findall(transaction_sumary)[0].strip(),#小于这个指的都已被清除
+			'max_undo_id' : re.compile("undo n:o <(.+)state:").findall(transaction_sumary)[0].strip(),#undo id 小于这个值的均被清除了.
+			'purge_state' : re.compile("Purge done for trx.+state:(.+)").findall(transaction_sumary)[0].strip(), #1.exited  2.disabled 3.running 4.running but idle 5.stopped
+			'history_list_length_for_undo' : re.compile("History list length(.+)").findall(transaction_sumary)[0].strip(), #length of TRX_RSEG_HISTORY #undo里包含的事务计数, purge清理之后就会减小
+			}
+
+		transaction_list = re.compile('LIST OF TRANSACTIONS FOR EACH SESSION:[\n](.+)',re.S).findall(transactions)[0].split('---TRANSACTION')
+		self.innodb_status_dict['transactions']['trx_list'] = [ self.__trx(transaction_list[x]) for x in range(1,len(transaction_list)) ]
 
 	def set_insert_buffer_and_adaptive_hash_index(self,):
 		#ibuf_print ha_print_info
@@ -292,6 +390,8 @@ class innodb_status_format:
 
 	def set_row_operations(self):
 		row_operations = re.compile('ROW OPERATIONS[\n]--------------[\n](.+)[\n]----------------------------[\n]END OF INNODB MONITOR OUTPUT',re.S).findall(self.innodb_status_str)[0]
+		#print(row_operations)
+		#print(re.compile(', Main thread ID=(.+), state:').findall(row_operations))
 
 		self.innodb_status_dict['row_operations'] = {
 			'queries_inside_innodb' : re.compile('(.+)queries inside InnoDB,').findall(row_operations)[0].strip(),
@@ -302,8 +402,8 @@ class innodb_status_format:
 			#TODO B-tree split operations
 
 			'process_id' : re.compile('Process ID=(.+), Main thread ID=').findall(row_operations)[0].strip(),
-			'main_thread_id' : re.compile(', Main thread ID=(.+), state:').findall(row_operations)[0].strip(),
-			'state' : re.compile(', state:(.+)').findall(row_operations)[0].strip(),
+			'main_thread_id' : re.compile(', Main thread ID=(.+), state[:=]').findall(row_operations)[0].strip(),
+			'state' : re.compile(', state[:=](.+)').findall(row_operations)[0].strip(),
 
 			'number_of_rows_inserted' : re.compile('Number of rows inserted(.+), updated').findall(row_operations)[0].strip(),
 			'number_of_rows_updated' : re.compile(', updated(.+), deleted').findall(row_operations)[0].strip(),
@@ -322,6 +422,7 @@ class innodb_status_format:
 		self.set_background_thread()
 		self.set_semaphores()
 		self.set_transactions()
+		self.set_dead_lock()
 		self.set_insert_buffer_and_adaptive_hash_index()
 		self.set_log()
 		self.set_buffer_pool_and_memory()

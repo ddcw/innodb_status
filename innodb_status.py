@@ -65,6 +65,12 @@ if __name__ == '__main__':
 	
 	
 	display = innodb_status_display.display(innodb_status_dict=innodb_status_dict,suggestion=suggestion)
+	#print('死锁:',innodb_status_dict['dead_lock'])
+	#print('事务:',innodb_status_dict['transactions']['sumary'])
+	#print('事务:',innodb_status_dict['transactions']['trx_list'])
+	#for x in innodb_status_dict['transactions']['trx_list']:
+	#	if x['sql'] != '':
+	#		print(x['sql'])
 	if parser.TYPE == 'simple':
 		display.simple()
 	elif parser.TYPE == 'html':
