@@ -161,51 +161,34 @@ class innodb_status_format:
 	#TODO
 	def set_dead_lock(self,):
 		deadlocks = re.compile('------------------------[\n]LATEST DETECTED DEADLOCK[\n]------------------------[\n](.+)[\n]------------[\n]TRANSACTIONS[\n]------------',re.S).findall(self.innodb_status_str)
-		#deadlock = deadlocks[0] if len(deadlocks) > 0 else ''
-		s1 = {}
-		s2 = {}
+		trx_list_format = []
 		rollback_trx = None
+		dead_lock_time = ''
 		if len(deadlocks) > 0:
-			deadlock = deadlocks[0].strip()
-			s1_info = re.compile('\*\*\* \(1\) TRANSACTION:(.+)\*\*\* \(1\) HOLDS THE LOCK\(S\)',re.S).findall(deadlock)
-			if len(s1_info) > 0:
-				#MYSQL 8.0
-				s1_info = s1_info[0].strip()
-			else:
-				#MYSQL 5.7
-				s1_info = re.compile('\*\*\* \(1\) TRANSACTION:(.+)\*\*\* \(1\) WAITING FOR THIS LOCK TO',re.S).findall(deadlock)[0].strip()
-			s1_thread_id = re.compile('MySQL thread id (.+), OS thread handle').findall(s1_info)[0].strip()
-			s1_host_user = re.compile('MySQL thread id.+OS thread handle.+query id (.+)').findall(s1_info)[0].strip()
-			s1_host_user_list = s1_host_user.split()
-			s1_host_user_list[0] = ''
-			s1_list = s1_info.split('\n')
-			s1_sql = s1_list[len(s1_list)-1] if s1_list[len(s1_list)-1] is not None else s1_list[len(s1_list)-2]
-			s1 = {
-				'trx_id':re.compile('TRANSACTION (.+), ACTIVE ').findall(s1_info)[0].strip(),
-				'thread_id':s1_thread_id,
-				'user':' '.join(x for x in s1_host_user_list),
-				'sql':s1_sql,
-			}
-			s2_info = re.compile('\*\*\* \(2\) TRANSACTION:(.+)\*\*\* \(2\) HOLDS THE LOCK',re.S).findall(deadlock)[0].strip()
-			s2_thread_id = re.compile('MySQL thread id (.+), OS thread handle').findall(s2_info)[0].strip()
-			s2_host_user = re.compile('MySQL thread id.+OS thread handle.+query id (.+)').findall(s2_info)[0].strip()
-			s2_host_user_list = s2_host_user.split()
-			s2_host_user_list[0] = ''
-			s2_list = s2_info.split('\n')
-			s2_sql = s2_list[len(s2_list)-1] if s2_list[len(s2_list)-1] is not None else s2_list[len(s2_list)-2]
-			s2 = {
-				'trx_id':re.compile('TRANSACTION (.+), ACTIVE ').findall(s2_info)[0].strip(),
-				'thread_id':s2_thread_id,
-				'user':' '.join(x for x in s2_host_user_list),
-				'sql':s2_sql,
-			}
-			rollback_trx = re.compile('\*\*\* WE ROLL BACK TRANSACTION \((.+)\)').findall(deadlock)[0].strip()
-
+			rollback_trx = re.compile('\*\*\* WE ROLL BACK TRANSACTION (.+)').findall(deadlocks[0])[0]
+			trx_list = deadlocks[0].strip().split(' TRANSACTION:')
+			dead_lock_time = trx_list[0].split()[0]
+			trx_list.remove(trx_list[0]) #删除时间之类的行首信息
+			for x in trx_list:
+				trx_id = re.compile("TRANSACTION (.+?), ACTIVE ").findall(x)[0]
+				thread_id = re.compile("MySQL thread id (.+?), OS thread handle").findall(x)[0]
+				thread_info_and_sql = re.compile("MySQL thread id (.+?)\*\*\* ",re.S).findall(x)[0]
+				sql = thread_info_and_sql.split('\n')
+				sql.remove(sql[0]) #删除thread信息
+				user_info = ' '.join(x for x in re.compile('MySQL thread id.+OS thread handle.+query id (.+)').findall(x)[0].strip().split())
+				lock_mode = re.compile(' lock_mode (.+?) ').findall(x)[0].strip()
+				trx_list_format.append({
+					'sql':sql,
+					'trx_id':trx_id,
+					'thread_id':thread_id,
+					'user_info':user_info,
+					'lock_mode':lock_mode,
+				})
 		self.innodb_status_dict['dead_lock'] = {
-			's1':s1,
-			's2':s2,
+			'dead_lock_time':dead_lock_time,
+			'trx_list':trx_list_format,
 			'rollback_trx':rollback_trx,
-		}
+			}
 
 	#---TRANSACTION 15420058, ACTIVE 0 sec, thread declared inside InnoDB 4999
 	#mysql tables in use 1, locked 1

@@ -34,9 +34,19 @@ class display:
 
 		if self.innodb_status_dict['dead_lock']['rollback_trx'] is not None:
 			print("死锁(最近一条)") #回滚产生死锁的事务. 就是 执行哪条sql会产生死锁, 就回滚那条SQL所在的事务.(对于show engine innodb 来说永远是session 2)
-			print('事务1:     事务ID:{trx_id}  connection_id:{thread_id}  连接信息:{user} \n事务1的SQL: {sql}'.format(trx_id=self.innodb_status_dict['dead_lock']['s1']['trx_id'], thread_id=self.innodb_status_dict['dead_lock']['s1']['thread_id'], user=self.innodb_status_dict['dead_lock']['s1']['user'], sql=self.innodb_status_dict['dead_lock']['s1']['sql']))
-			print('事务2:     事务ID:{trx_id}  connection_id:{thread_id}  连接信息:{user} \n事务1的SQL: {sql}'.format(trx_id=self.innodb_status_dict['dead_lock']['s2']['trx_id'], thread_id=self.innodb_status_dict['dead_lock']['s2']['thread_id'], user=self.innodb_status_dict['dead_lock']['s2']['user'], sql=self.innodb_status_dict['dead_lock']['s2']['sql']))
-			print("回滚事务: {trx}".format(trx=self.innodb_status_dict['dead_lock']['rollback_trx']))
+			print("产生死锁的时间: {t} ".format(t=self.innodb_status_dict['dead_lock']['dead_lock_time']))
+			for x in self.innodb_status_dict['dead_lock']['trx_list']:
+				print('事务ID:{trx_id}  锁类型:{lock}  thread_id:{thread_id}  {user_info} SQL如下:'.format(trx_id=x['trx_id'], thread_id=x['thread_id'], user_info=x['user_info'], lock=x['lock_mode']))
+				for y in x['sql']:
+					print(y)
+			_rollback_trx = self.innodb_status_dict['dead_lock']['rollback_trx']
+			if _rollback_trx == '(2)':
+				print("回滚事务: {trx}".format(trx=self.innodb_status_dict['dead_lock']['trx_list'][1]['trx_id']))
+			elif _rollback_trx == '(1)':
+				print("回滚事务: {trx}".format(trx=self.innodb_status_dict['dead_lock']['trx_list'][0]['trx_id']))
+			else:
+				print("回滚事务: {trx}".format(trx=_rollback_trx))
+			#print("回滚事务: {trx}".format(trx=self.innodb_status_dict['dead_lock']['rollback_trx']))
 			#print(self.innodb_status_dict['dead_lock'])
 		else:
 			print("无死锁信息")
@@ -55,7 +65,7 @@ class display:
 		print("")
 		print("文件IO")
 		print("Pending normal 异步IO READ (对应read thread) : ",self.innodb_status_dict['file_io']['pending_normal_aio_reads'] )
-		print("Pending normal 异步IO WRITE(对应WRIET thread): ",self.innodb_status_dict['file_io']['pending_normal_aio_writes'] )
+		print("Pending normal 异步IO WRITE(对应write thread): ",self.innodb_status_dict['file_io']['pending_normal_aio_writes'] )
 		#insert buffer TODO
 		print('挂起(pending)的redo log flush:',self.innodb_status_dict['file_io']['pending_flushes_log'])
 		print('挂起(pending)的tablespace flush:',self.innodb_status_dict['file_io']['buffer_pool'])
@@ -86,7 +96,7 @@ class display:
 		instance_count = len(self.innodb_status_dict['buffer_pool_and_memory']['buffer_pool_info_detail'])
 		if instance_count > 0:
 			print("buffer pool 实例数(对应参数:innodb_buffer_pool_instances): ",instance_count)
-		print("总内存: {total} 字节".format(total=self.innodb_status_dict['buffer_pool_and_memory']['buffer_pool_info_total']['total_large_memory_allocated']))
+		print("总内存: {total} 字节  ({total_GB} GB)".format(total=self.innodb_status_dict['buffer_pool_and_memory']['buffer_pool_info_total']['total_large_memory_allocated'], total_GB=round(int(self.innodb_status_dict['buffer_pool_and_memory']['buffer_pool_info_total']['total_large_memory_allocated'])/1024/1024/1024,1)))
 		print("系统(字典)使用: {sysmem} 字节".format(sysmem=self.innodb_status_dict['buffer_pool_and_memory']['buffer_pool_info_total']['dictionary_memory_allocated']))
 		print("buffer pool: {s} 页".format(s=self.innodb_status_dict['buffer_pool_and_memory']['buffer_pool_info_total']['instance']['buffer_pool_size']))
 		print("free buffer: {s} 页".format(s=self.innodb_status_dict['buffer_pool_and_memory']['buffer_pool_info_total']['instance']['free_buffers']))

@@ -101,11 +101,11 @@ def png 输出png格式结果(TODO)
 
 # BUG修复记录
 
-| BUG详情                                    | 已修复版本 | 修复时间       | 报错                                       |
-| ---------------------------------------- | ----- | ---------- | ---------------------------------------- |
-| 8.0中ROW OPERATIONS 中 state= 而5.7中是state: 的问题 | v0.2  | 2022.10.30 | re.compile(', Main thread ID=(.+), state:').findall(row_operations)[0].strip() |
-|                                          |       |            |                                          |
-|                                          |       |            |                                          |
+| BUG详情                                    | 已修复版本 | 修复时间       | 报错                                       | MYSQL版本 |
+| ---------------------------------------- | ----- | ---------- | ---------------------------------------- | ------- |
+| 8.0中ROW OPERATIONS 中 state= 而5.7中是state: 的问题 | v0.2  | 2022.10.30 | re.compile(', Main thread ID=(.+), state:').findall(row_operations)[0].strip() | 8.0     |
+| [死锁匹配出错](https://github.com/ddcw/innodb_status/issues/1) | v0.3  | 2022.11.15 | s1_info = re.compile('\*\*\* \(1\) TRANSACTION:(.+)\*\*\* \(1\) WAITING FOR THIS LOCK TO',re.S).findall(deadlock)[0].strip() IndexError: list index out of range | 未知      |
+|                                          |       |            |                                          |         |
 
 
 
@@ -115,6 +115,7 @@ def png 输出png格式结果(TODO)
 | ---- | ---------- | ---------------------------------------- |
 | 0.1  | 2022.10.28 | 分析mysql的innodb status. <br />仅支持mysql5.7/8.0. <br />不支持建议提供. <br />不会分析事务和锁. <br />不支持html格式输出. |
 | 0.2  | 2022.10.30 | 支持事务分析和死锁<br />系统繁忙程度定义更改: 原: srv_active/srv_idle 变更后: srv_active/(srv_activ+srv_idle)*100 |
+| 0.3  | 2022.11.15 | 修复[已知问题1](https://github.com/ddcw/innodb_status/issues/1), 并直接显示回滚事务的事务ID<br />显示优化(总内存显示为GB格式.)<br />不再提供二进制文件, 需要的请自己使用pyinstaller打包. |
 |      |            |                                          |
 
 
@@ -124,13 +125,12 @@ def png 输出png格式结果(TODO)
 如下为 mysql 8.0 环境使用样例.
 
 ```
-[root@ddcw21 innodb_status]#python innodb_status.py -h 127.0.0.1 -P3314 -p123456  
 说明:
-采集时间: 2022-10-30 18:50:31
-下面涉及到的 每秒平均值 计算时间均为最近 10 秒内
+采集时间: 2022-11-15 13:41:16
+下面涉及到的 每秒平均值 计算时间均为最近 15 秒内
 
 master线程:
-系统繁忙程度(越大越繁忙): 0.99 %
+系统繁忙程度(越大越繁忙): 0.1 %
 日志写入和刷新次数: 0
 
 SEMAPHORES信号量:
@@ -146,62 +146,66 @@ rw_sx_os_wait_count 0
 每次空转等待的锁: rw_s:0.00  rw_x:0.00 rw_sx:0.00
 
 死锁(最近一条)
-事务1:     事务ID:623011  connection_id:37  连接信息: localhost 127.0.0.1 root updating 
-事务1的SQL: update t2022 set name='s1' where id=2
-事务2:     事务ID:623010  connection_id:38  连接信息: localhost 127.0.0.1 root updating 
-事务1的SQL: update t2022 set name='s1' where id=1
-回滚事务: 2
+产生死锁的时间: 2022-11-15 
+事务ID:1347130  锁类型:X  thread_id:8  69 localhost 127.0.0.1 root updating SQL如下:
+update t20221115 set name='123' where id=2
+
+
+事务ID:1347129  锁类型:X  thread_id:9  70 localhost 127.0.0.1 root updating SQL如下:
+update t20221115 set name='1' where id=1
+
+
+回滚事务: 1347129
 
 事务汇总信息
-max_trx_id : 722728
-min_trx_id : 722711
+max_trx_id : 1347136
+min_trx_id : 1347136
 max_undo_id: 0
 purge线程状态: running but idle
-undo包含的事务数: 373
-事务ID:722726  事务状态:ACTIVE (PREPARED) 0 sec  锁:6  堆大小:1128  锁行数:3  事务中修改或插入的行数:4  MYSQL_PROCESS_ID:74
-事务ID:722725  事务状态:ACTIVE (PREPARED) 0 sec  锁:6  堆大小:1128  锁行数:3  事务中修改或插入的行数:4  MYSQL_PROCESS_ID:81
-事务ID:722721  事务状态:ACTIVE (PREPARED) 0 sec  锁:6  堆大小:1128  锁行数:3  事务中修改或插入的行数:4  MYSQL_PROCESS_ID:76
+undo包含的事务数: 0
+事务ID:1347130  事务状态:ACTIVE 4352 sec  锁:3  堆大小:1128  锁行数:2  事务中修改或插入的行数:2  MYSQL_PROCESS_ID:8
 
 文件IO
 Pending normal 异步IO READ (对应read thread) :  [0, 0, 0, 0, 0, 0, 0, 0]
-Pending normal 异步IO WRITE(对应WRIET thread):  [0, 0, 0, 0]
+Pending normal 异步IO WRITE(对应write thread):  [0, 0, 0, 0]
 挂起(pending)的redo log flush: 0
-挂起(pending)的tablespace flush: 18446744073709551615
-OS总读次数: 110904  速度: 607.22 次/秒.  平均每次读 16384 字节
-OS总写次数: 2069284  速度: 13879.56 次/秒. 
-OS总flush次数: 492921  速度: 3065.85 次/秒. 
+挂起(pending)的tablespace flush: 0
+OS总读次数: 1053  速度: 0.00 次/秒.  平均每次读 0 字节
+OS总写次数: 492  速度: 0.00 次/秒. 
+OS总flush次数: 204  速度: 0.00 次/秒. 
 
 insert/change buffer和自适应hash索引
-已合并页的数量: 4 页.   ibuf空闲列表长度: 321 页.  ibuf大小: 326 页.  合并插入次数: 34317
-合并操作次数: insert buffer: 22372  delete buffer: 42949   purge buffer: 24266
+已合并页的数量: 1 页.   ibuf空闲列表长度: 324 页.  ibuf大小: 326 页.  合并插入次数: 0
+合并操作次数: insert buffer: 0  delete buffer: 0   purge buffer: 0
 无需合并操作的次数: insert buffer: 0  delete buffer: 0   purge buffer: 0
-使用hash索引的查询 23722.93次/秒  未使用hash使用的查询 21353.26次/秒   自适应hash索引使用率52.63%
+使用hash索引的查询 0.00次/秒  未使用hash使用的查询 0.00次/秒   自适应hash索引使用率0.0%
 
 日志信息(redo)
-最新产生的LSN: 3538249320
-已刷盘的LSN: 3538249320
-最老的LSN: 3523077060
-最新检查点LSN: 3523077060
-redo已完成的IO次数: 1869841  速度:12831.80次/秒
+最新产生的LSN: 4075080066
+已刷盘的LSN: 4075080066
+最老的LSN: 4075080066
+最新检查点LSN: 4075080066
+redo已完成的IO次数: 100  速度:0.00次/秒
 
 BUFFER POOL AND MEMORY(不含具体实例的,只含汇总的)
-总内存: 0 字节
-系统(字典)使用: 513567 字节
+总内存: 0 字节  (0.0 GB)
+系统(字典)使用: 518237 字节
 buffer pool: 8192 页
-free buffer: 466 页
-LRU        : 7312 页
-old LRU    : 2680 页
-脏页(flush list)            : 3952 页
+free buffer: 7014 页
+LRU        : 1172 页
+old LRU    : 451 页
+脏页(flush list)            : 0 页
 等待读入的页(pending read)  : 0 页
 等待的写(pending write) : LRU: 0 页.   flush_list(等待刷新的脏页): 0 页.   单页: 0 页
-LRU made young(LRU中移动到前部的页数,就是经常使用的页) 204296 页(速度:1266.04/s),   non-young 522516 页(速度:3023.38/s)
-从磁盘读取的页: 110856(607.22/s)   在内存中创建的页(无数据): 3541(22.92/s)     写入磁盘的页: 159355(916.13/s)
-缓存命中率:998 / 1000
+LRU made young(LRU中移动到前部的页数,就是经常使用的页) 0 页(速度:0.00/s),   non-young 0 页(速度:0.00/s)
+从磁盘读取的页: 1025(0.00/s)   在内存中创建的页(无数据): 147(0.00/s)     写入磁盘的页: 278(0.00/s)
+缓存命中率:数据库太闲,无此数据.
 预读速度: 0.00/s   (因未被访问)驱除速度: 0.00/s   随机预读速度: 0.00/s
 
 行操作ROW OPERATIONS
-read view:  8
-主进程ID: 3589 (sleeping)
-插入行数: 201329(1277.57/s)   更新行数: 402658(2554.94/s)   删除行数: 201330(1277.57/s)   读行数: 83955466(532727.33/s)
+read view:  0
+主进程ID: 4186 (sleeping)
+插入行数: 2(0.00/s)   更新行数: 1(0.00/s)   删除行数: 2(0.00/s)   读行数: 9(0.00/s)
+
 ```
 
